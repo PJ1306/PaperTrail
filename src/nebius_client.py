@@ -34,14 +34,20 @@ class NebiusClient:
             max_retries=settings.max_retries,
         )
 
-    def send_test_prompt(self, prompt: str = TEST_PROMPT) -> str:
-        """Send a tiny prompt and return the model text if a response arrives."""
+    def generate(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int = 1024,
+        temperature: float = 0.0,
+    ) -> str:
+        """Send chat messages to the configured model and return the text reply."""
         try:
             response = self._client.chat.completions.create(
                 model=self.settings.model_id,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=32,
-                temperature=0,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
         except AuthenticationError as exc:
             raise NebiusError(
@@ -100,3 +106,11 @@ class NebiusClient:
             raise NebiusError("The model returned an empty response, so the connection cannot be confirmed.")
 
         return content.strip()
+
+    def send_test_prompt(self, prompt: str = TEST_PROMPT) -> str:
+        """Send a tiny prompt and return the model text if a response arrives."""
+        return self.generate(
+            [{"role": "user", "content": prompt}],
+            max_tokens=32,
+            temperature=0.0,
+        )

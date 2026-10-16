@@ -8,14 +8,15 @@ This repository currently implements:
 - **Phase 1:** Nebius Token Factory client and connection verification.
 - **Phase 2:** PDF upload, validation, and page-level text extraction using PyMuPDF.
 - **Phase 3A:** Deterministic passage chunking and local BM25 keyword evidence retrieval.
+- **Phase 3B:** Evidence-grounded answer generation with strict citation validation and offline demo mode.
 
 > [!NOTE]
-> **No API Key or Paid Services Needed for Phase 2 & Phase 3A!**  
-> PDF upload, parsing, page-level text extraction, passage chunking, BM25 keyword search, and UI previews run **100% locally** on your machine. All unit tests run against in-memory synthetic documents and mocked interfaces without making external network calls.
+> **No API Key or Paid Services Needed for Development or Testing!**  
+> PDF upload, parsing, passage chunking, BM25 keyword search, citation validation, and offline Q&A demo mode run **100% locally** on your machine. All unit tests run against in-memory synthetic documents and mocked interfaces without making external network calls.
 
 ---
 
-## Current Features (Phases 1, 2, & 3A)
+## Current Features (Phases 1, 2, 3A, & 3B)
 
 - **Multiple PDF Upload:** Upload one or more research papers in PDF format.
 - **In-Memory Text Extraction:** Uses PyMuPDF (`pymupdf`) to safely parse PDFs in memory without writing temporary files to disk.
@@ -24,31 +25,36 @@ This repository currently implements:
 - **Scanned Document Detection:** Distinguishes between text papers and scanned/image-only PDFs. Never silently claims an image-only PDF was parsed successfully.
 - **Deterministic Passage Chunking:** Splits long pages into bounded passages (~800–1200 characters) with modest overlap, strictly preserving original document ID, filename, and page number. Text from different pages is never mixed.
 - **Local BM25 Evidence Retrieval:** Ranks matching paper passages using the standard Okapi BM25 algorithm (Robertson-Spärck Jones IDF and length normalization) with zero external dependencies.
-- **Transparent Relevance Scores:** Displays clear BM25 scores and rank for each retrieved passage; non-matching passages (score 0) are cleanly omitted.
-- **Interactive UI:** Streamlit interface provides multi-file upload, document health overview, page text accordions, and a dedicated research search box.
-- **Nebius Connection Test:** Phase 1 connection test is preserved in a collapsible panel to test API keys whenever you obtain one.
+- **Evidence-Grounded Question Answering (Phase 3B):** Accepts a research question, retrieves candidate passages, and produces an answer strictly grounded in the retrieved sources.
+- **Strict Citation Validation:** Every model citation is verified against the actual retrieved passage IDs. The model cannot invent filenames or page numbers because metadata is mapped back from trusted memory records. Unknown citations are rejected.
+- **Explicit Insufficient Evidence:** If no relevant passages are retrieved, the system immediately returns an insufficient-evidence result without calling a model.
+- **Offline Demo Mode vs. Live Nemotron:** Includes a fully functional offline demo mode that emulates grounded answer generation locally without API keys or credit consumption. When Nebius credentials are configured, the app seamlessly connects to NVIDIA Nemotron (`nvidia/Nemotron-3_5-Lightning`).
+- **Interactive UI:** Streamlit interface provides multi-file upload, document health overview, page text accordions, BM25 research search, and evidence-grounded Q&A with clickable source inspection.
 
 ---
 
-## How Local Retrieval Works (Phase 3A)
+## How Evidence-Grounded Q&A Works (Phase 3B)
 
-1. **Page-Bounded Chunking:** Each page is processed independently. If page text exceeds the target size (~1000 characters), it is split along natural paragraph, sentence, or word boundaries with a 150-character overlap. Each passage receives a unique identifier (e.g. `doc_123_p2_c1`).
-2. **Case & Punctuation Normalization:** Queries and passage texts are normalized to lower-case word tokens, stripping punctuation noise.
-3. **BM25 Scoring Formula:** Uses standard Okapi BM25 parameters ($k_1 = 1.5, b = 0.75$) with smoothed positive IDF. Passages matching multiple query terms or distinctive terms are ranked highest.
-4. **No Fabricated Answers:** If no passages contain the searched terms, an explicit "no matching evidence" notification is displayed. The system never fabricates citations or generates hallucinated answers.
+1. **Retrieval First:** When a user enters a research question, the BM25 retrieval engine first identifies the top candidate passages from the processed papers.
+2. **Zero-Call Guardrail:** If no matching passages are found, answer generation terminates immediately with an explicit "insufficient evidence" status without calling the model.
+3. **Structured Prompting:** The model is instructed to answer strictly using the provided passages, cite exact passage IDs (e.g. `[doc_123_p1_c1]`), distinguish evidence from inference, and identify evidentiary gaps in the `limitations` field.
+4. **Untrusted Output Verification:** Model responses are treated as untrusted data. The validator parses the structured JSON and verifies every citation ID against the in-memory passage dictionary:
+   - **Valid Citations:** Mapped back to the trusted filename, page number, and text.
+   - **Invalid/Hallucinated Citations:** Flagged, rejected, and excluded from verified sources.
+5. **Execution Transparency:** Every answer is clearly badged as either **DEMO MODE (Offline Mock)** or **LIVE INFERENCE (NVIDIA Nemotron via Nebius)** so users always know the provenance of the text.
 
 ---
 
-## Known Retrieval & Extraction Limitations
+## Known Limitations
 
-1. **Lexical Keyword Search vs Semantic Understanding:**  
-   Phase 3A implements lexical BM25 retrieval. It searches for specific query terms and morphological variations in the text. It does **not** perform semantic embedding search or conceptual matching. If a paper discusses "machine learning" and you search for "deep learning", BM25 will not match unless the term explicitly appears. Semantic embeddings and neural RAG belong to later phases.
-2. **Scanned Documents & OCR:**  
-   Extraction targets digital text layers encoded in the PDF. Image-only scanned PDFs require Optical Character Recognition (OCR), which is not yet implemented. Scanned files are flagged with a warning and excluded from search until OCR is added.
-3. **Multi-Column & Tabular Layouts:**  
-   Two-column academic papers are extracted in linear stream order. Complex LaTeX tables, mathematical equations, and vector graphics may lose grid alignment.
-4. **Encrypted Documents:**  
-   Password-protected or encrypted PDFs are safely rejected with a clear notification.
+1. **Nebius Live API Status:**  
+   Live Nemotron calls require an active Nebius Token Factory account with an API key set in `NEBIUS_API_KEY`. While account onboarding/billing is pending, the application provides the **Offline Demo Mode** so you can develop, test, and demonstrate the full pipeline without credentials.
+2. **Lexical Keyword Search vs Semantic Understanding:**  
+   Passage retrieval in Phase 3A/3B uses BM25 lexical keyword matching. It matches explicit terms and morphological variations rather than conceptual abstractions. Dense vector embeddings belong to future phases.
+3. **Scanned Documents & OCR:**  
+   Only digital text layers in PDFs are extracted. Image-only scanned PDFs require OCR (not yet implemented) and are flagged with a warning.
+4. **No Cross-Paper Contradiction Dashboards Yet:**  
+   Contradiction detection and automated multi-paper claim auditing belong to Phase 4 and Phase 5.
 
 ---
 
@@ -57,7 +63,7 @@ This repository currently implements:
 - **Python 3.10+** (tested on Python 3.12.1 on Windows).  
   *Tip for Windows:* Use the launcher `py -3` rather than `python` if `python` opens the Microsoft Store.
 - **Git** for version control.
-- *(Optional)* A Nebius Token Factory API key if you want to test model connectivity in the Phase 1 panel.
+- *(Optional)* A Nebius Token Factory API key if you want to test live model connectivity.
 
 ---
 
@@ -116,13 +122,14 @@ Launch the Streamlit app:
 python -m streamlit run app.py
 ```
 
-Then open `http://localhost:8501` in your browser.
+Then open the local URL printed in the terminal (usually `http://localhost:8501`).
 
 ### How to use:
-1. **Upload & Process Papers:** Under **PDF Upload and Text Extraction**, select one or more PDF files and click **Process PDFs**.
-2. **Search for Evidence:** Under **Research Search (Local Evidence Retrieval)**, enter your query or research keywords (e.g., `quantum error threshold`) and click **Search Papers**.
-3. **Inspect Evidence:** Ranked matching passages appear with their source filename, exact page number, and BM25 score.
-4. **Inspect Raw Pages:** Scroll down to **Document Overview & Page Previews** to expand page-by-page text.
+1. **Upload & Process Papers:** Under **PDF Upload and Text Extraction**, select PDF files and click **Process PDFs**.
+2. **Ask Research Questions (Phase 3B):** Scroll to **Research Question Answering**, enter a question, select your engine (Offline Demo Mode or Live Nemotron), and click **Generate Answer**.
+3. **Inspect Citations:** Expand any verified citation to read the exact quoted source passage directly from the paper.
+4. **Keyword Search (Phase 3A):** Use **Research Search** to inspect BM25 ranked passages across papers.
+5. **Page-by-Page Inspection (Phase 2):** Use **Document Overview & Page Previews** to inspect full page text.
 
 ---
 
@@ -153,11 +160,13 @@ python -m pytest -v
 
 | Path | Purpose |
 | --- | --- |
-| `app.py` | Streamlit UI (multi-PDF uploader, page previews, BM25 research search, connection check) |
+| `app.py` | Streamlit UI (multi-PDF uploader, page previews, BM25 search, grounded Q&A) |
 | `src/config.py` | Environment configuration and safety limits |
 | `src/pdf_processor.py` | PyMuPDF extraction, validation, and structured page records |
 | `src/retrieval.py` | Deterministic passage chunking and pure Python BM25 keyword retrieval |
-| `src/nebius_client.py` | OpenAI SDK client for Nebius Token Factory |
+| `src/answer_generator.py` | Grounded answer generation, prompt construction, citation validation, and mock mode |
+| `src/nebius_client.py` | OpenAI SDK client for Nebius Token Factory with generate() method |
+| `tests/test_answer_generator.py` | Offline tests for prompt construction, citations, mock mode, and error handling |
 | `tests/test_retrieval.py` | Unit tests for passage chunking, page attribution, and BM25 ranking |
 | `tests/test_pdf_processor.py` | Unit tests for PDF extraction, page numbering, safety limits, and errors |
 | `tests/test_config.py` | Tests for configuration loader and environment overrides |
@@ -172,6 +181,6 @@ python -m pytest -v
 - [x] **Phase 1:** Project setup, configuration, Nebius client, mocked tests.
 - [x] **Phase 2:** PDF upload, PyMuPDF page-level text extraction, metadata, page previews.
 - [x] **Phase 3A:** Deterministic passage chunking and local BM25 keyword evidence retrieval.
-- [ ] **Phase 3B:** Vector embeddings and semantic retrieval.
-- [ ] **Phase 4:** Cross-document RAG and claim extraction.
+- [x] **Phase 3B:** Evidence-grounded answer generation with citation verification and offline demo mode.
+- [ ] **Phase 4:** Cross-document claim extraction and synthesis.
 - [ ] **Phase 5:** Evidence auditing and contradiction detection.
